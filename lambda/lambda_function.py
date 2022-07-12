@@ -56,7 +56,7 @@ def lambda_handler(event, context):
     #print("done")
     #write_dataframe_in_s3(test_df, end)
     # Convert file into JSON and push it into firehose
-    push_file_to_firehose(test_df)
+    #push_file_to_firehose(test_df)
     # Update the RDS 
     update_rds_after_api_call(tickers_list)
     # closing the databse
@@ -67,7 +67,7 @@ def lambda_handler(event, context):
 def retrieve_stocks_from_db():
     result = []
     mycur = conn.cursor()
-    query = "select  distinct symbol from STOCKS where symbol in ('AAPL', 'KO', 'LMT') AND LAST_UPDATED is NULL LIMIT 100;"
+    query = "select  distinct symbol from STOCKS where LAST_UPDATED IS NULL LIMIT 100;"
     try:
         logger.info('Getting data from the database')
         mycur.execute(query)
@@ -120,6 +120,7 @@ def adjust_stock_dataframe(stocks_df):
         data_df['Ticker'] = str(ticker)
         tup_data = [tuple(x) for x in data_df.to_numpy()]
         final_df = pd.DataFrame(tup_data, columns = ['Date','Price','Symbol'])
+        push_file_to_firehose(final_df)
     return final_df
 """
 def write_dataframe_in_s3(stocks_df, end_dt):
@@ -151,7 +152,21 @@ def write_dataframe_in_s3(stocks_df, end_dt):
         logger.error(e)
 """
 def push_file_to_firehose(stocks_df):
-    pass
+    """
+    jstr = json.dumps(result,
+                   default=lambda df: json.loads(df.to_json()))
+    newresult = json.loads(jstr)"""
+    fh = boto3.client('firehose')
+    stocks_json = stocks_df.to_json(orient='records').strip('[]')
+    logger.info(stocks_json)
+    try: 
+        fh.put_record(DeliveryStreamName='PUT-S3-bndnetworks', \
+        Record={'Data': json.dumps(stocks_json)} )
+        logger.info("Successfully pushed the file into Firehose")
+    except Exception as e:
+        logging.error(e)
+        
+        
 def update_rds_after_api_call(tickers_df):
     '''
     This function is used to update the MySql db after the Yahoo Finance
